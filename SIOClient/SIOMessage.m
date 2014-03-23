@@ -75,6 +75,22 @@ static Class SIOMessageClassForType(SIOMessageType type)
     return self;
 }
 
+#pragma mark NSCopying
+
+- (id)copyWithZone:(NSZone *)zone
+{
+    SIOMessage *m = [(SIOMessage *)[[self class] allocWithZone:zone] init];
+    
+    m->_acknowledge = self->_acknowledge;
+    m->_messageID = self->_messageID;
+    m->_endpoint = [self->_endpoint copy];
+    m->_data = [self->_data copy];
+    
+    return m;
+}
+
+#pragma mark
+
 - (NSInteger)parseMessageType:(NSScanner *)scanner
 {
     NSInteger type = SIOMessageTypeUnknown;
@@ -92,7 +108,11 @@ static Class SIOMessageClassForType(SIOMessageType type)
         plusSet = [NSCharacterSet characterSetWithCharactersInString:@"+"];
     });
     
+    if ([scanner isAtEnd])
+        return;
+    
     // Skip colon after type
+    // This assumes that the type has already been scanned
     scanner.scanLocation += 1;
     
     // Scan message ID

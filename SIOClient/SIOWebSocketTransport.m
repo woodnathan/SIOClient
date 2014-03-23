@@ -9,9 +9,12 @@
 #import "SIOWebSocketTransport.h"
 #import "SRWebSocket.h"
 #import "SIOMessage.h"
-#import "SIOHeartbeatMessage.h"
+#import "SIODisconnectMessage.h"
+#import "SIOClient.h"
 
 @interface SIOWebSocketTransport () <SRWebSocketDelegate>
+
+@property (atomic, assign) NSUInteger retryCount;
 
 @property (nonatomic, strong) SRWebSocket *socket;
 
@@ -23,6 +26,12 @@
 {
     return secure ? @"wss" : @"ws";
 }
+
++ (NSString *)transportID
+{
+    return @"websocket";
+}
+
 - (NSString *)transportID
 {
     return @"websocket";
@@ -33,12 +42,17 @@
     SRWebSocket *socket = self.socket;
     if (socket != nil)
     {
-        socket.delegate = nil;
         [socket close];
+        socket.delegate = nil;
     }
 }
 
 - (void)connect
+{
+    [self connect:NO];
+}
+
+- (void)connect:(BOOL)isRetry
 {
     SIOTransportState state = self.state;
     if (state == SIOTransportStateOpening || state == SIOTransportStateOpen)
@@ -47,7 +61,10 @@
     self->_state = SIOTransportStateOpening;
     [self.delegate transport:self transitionedToState:SIOTransportStateOpening];
     
-    NSMutableURLRequest *request = [self.delegate transportRequestWithTransport:self];
+    if (isRetry == NO)
+        self.retryCount = 0;
+    
+    NSMutableURLRequest *request = [self.delegate transportRequestWithTransport:self params:nil];
     
     SRWebSocket *socket = [[SRWebSocket alloc] initWithURLRequest:request];
     socket.delegate = self;
@@ -60,6 +77,8 @@
     SIOTransportState state = self.state;
     if (state == SIOTransportStateClosing || state == SIOTransportStateClosed)
         return;
+    
+    [self sendMessage:[[SIODisconnectMessage alloc] init]];
     
     self->_state = SIOTransportStateClosing;
     [self.socket close];
@@ -82,11 +101,6 @@
     [socket send:payload];
     
     return YES;
-}
-
-- (void)sendHeartbeat
-{
-    [self sendMessage:[[SIOHeartbeatMessage alloc] init]];
 }
 
 #pragma mark - SRWebSocketDelegate
@@ -121,7 +135,23 @@
     [self.delegate transport:self transitionedToState:SIOTransportStateClosed];
     
     if (wasClean == NO)
-        [self connect];
+    {
+        if (self.retryCount < 10)
+        {
+            [self connect:YES];
+            self.retryCount++;
+        }
+        else
+        {
+            NSString *description = NSLocalizedString(@"Transport exceeded connection retry count", @"");
+            NSDictionary *userInfo = @{ NSLocalizedDescriptionKey : description,
+                                        NSLocalizedFailureReasonErrorKey : reason };
+            NSError *error = [NSError errorWithDomain:SIOClientErrorDomain
+                                                 code:code
+                                             userInfo:userInfo];
+            [self.delegate transport:self didFailWithError:error];
+        }
+    }
 }
 
 @end

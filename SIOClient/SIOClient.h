@@ -8,6 +8,8 @@
 
 #import <Foundation/Foundation.h>
 #import "SIOEventMessage.h"
+#import "SIOTextMessage.h"
+#import "SIOJSONMessage.h"
 
 @class SIOClient;
 
@@ -20,6 +22,8 @@ typedef NS_ENUM(NSInteger, SIOClientState) {
 
 typedef void(^SIOClientStatusListener)(SIOClient *client, SIOClientState state);
 typedef void(^SIOEventListener)(SIOClient *client, SIOClientState state, SIOEventMessage *message);
+typedef void(^SIOTextListener)(SIOClient *client, SIOClientState state, SIOTextMessage *message);
+typedef void(^SIOJSONListener)(SIOClient *client, SIOClientState state, SIOJSONMessage *message);
 typedef void(^SIOAcknoledgementCallback)(NSString *data);
 
 extern NSString *const SIOClientErrorDomain;
@@ -66,6 +70,8 @@ extern NSString *const SIOClientXHRPollingTransportID; // Unsupported
 
 - (void)addStatus:(SIOClientState)status listener:(SIOClientStatusListener)listener;
 - (void)addEvent:(NSString *)event listener:(SIOEventListener)listener;
+- (void)addTextListener:(SIOTextListener)listener;
+- (void)addJSONListener:(SIOJSONListener)listener;
 
 - (void)sendMessage:(NSString *)message;
 - (void)sendMessage:(NSString *)message callback:(SIOAcknoledgementCallback)callback;

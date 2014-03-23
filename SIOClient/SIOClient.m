@@ -9,12 +9,14 @@
 #import "SIOClient.h"
 #import "SIOBlockCollection.h"
 #import "SIOWebSocketTransport.h"
+#import "SIOXHRPollingTransport.h"
 #import "SIOHandshakeResponse.h"
 #import "SIOEventMessage.h"
 #import "SIOJSONMessage.h"
 #import "SIOTextMessage.h"
 #import "SIOAcknowledgeMessage.h"
 #import "SIODisconnectMessage.h"
+#import "SIOHeartbeatMessage.h"
 
 NSString *const SIOClientErrorDomain = @"io.socket.client";
 
@@ -23,6 +25,9 @@ NSString *const SIOClientXHRPollingTransportID = @"xhr-polling";
 
 static NSString *const SIOClientHTTPScheme = @"http";
 static NSString *const SIOClientHTTPSScheme = @"https";
+
+static NSString *const SIOMessageTextCallbackKey = @"text";
+static NSString *const SIOMessageJSONCallbackKey = @"json";
 
 static inline BOOL SIOClientIsConnecting(SIOClientState state)
 {
@@ -42,12 +47,17 @@ static NSString *SIOQueryStringFromParametersWithEncoding(NSDictionary *params, 
     NSMutableArray *pairs = [[NSMutableArray alloc] initWithCapacity:params.count];
     for (NSString *key in params)
     {
-        NSString *value = [params objectForKey:key];
-        
         NSString *escapedKey = SIOPercentEscapedQueryStringWithEncoding(key, encoding);
-        NSString *escapedValue = SIOPercentEscapedQueryStringWithEncoding(value, encoding);
+        NSString *pair = escapedKey;
         
-        NSString *pair = [NSString stringWithFormat:@"%@=%@", escapedKey, escapedValue];
+        NSString *value = [params objectForKey:key];
+        if (value.length > 0) // Value-less pair
+        {
+            NSString *escapedValue = SIOPercentEscapedQueryStringWithEncoding(value, encoding);
+            
+            pair = [NSString stringWithFormat:@"%@=%@", escapedKey, escapedValue];
+        }
+        
         [pairs addObject:pair];
     }
     
@@ -66,12 +76,13 @@ static NSString *SIOQueryStringFromParametersWithEncoding(NSDictionary *params, 
 @property (nonatomic, assign) NSInteger messageID;
 @property (nonatomic, readonly) SIOBlockCollection *statusListeners;
 @property (nonatomic, readonly) SIOBlockCollection *eventListeners;
+@property (nonatomic, readonly) SIOBlockCollection *messageListeners;
 @property (nonatomic, readonly) NSMutableDictionary *callbacks;
 
 @property (nonatomic, strong) NSRecursiveLock *queueLock;
 @property (nonatomic, strong) NSMutableArray *messageQueue;
 - (void)addMessageToQueue:(SIOMessage *)message;
-- (void)flushQueue:(BOOL)wait;
+- (void)flushQueueAndWait:(BOOL)wait;
 
 - (NSMutableURLRequest *)handshakeRequestWithSession:(NSString *)session
                                            transport:(NSString *)transport
@@ -85,7 +96,9 @@ static NSString *SIOQueryStringFromParametersWithEncoding(NSDictionary *params, 
 
 @implementation SIOClient
 
-@synthesize statusListeners = _statusListeners, eventListeners = _eventListeners;
+@synthesize statusListeners = _statusListeners;
+@synthesize eventListeners = _eventListeners;
+@synthesize messageListeners = _messageListeners;
 @synthesize callbacks = _callbacks;
 
 - (instancetype)initWithHost:(NSString *)host
@@ -139,6 +152,13 @@ static NSString *SIOQueryStringFromParametersWithEncoding(NSDictionary *params, 
     return self->_eventListeners;
 }
 
+- (SIOBlockCollection *)messageListeners
+{
+    if (self->_messageListeners == nil)
+        self->_messageListeners = [[SIOBlockCollection alloc] init];
+    return self->_messageListeners;
+}
+
 - (NSMutableDictionary *)callbacks
 {
     if (self->_callbacks == nil)
@@ -152,7 +172,7 @@ static NSString *SIOQueryStringFromParametersWithEncoding(NSDictionary *params, 
     {
         self->_state = state;
         
-        [self flushQueue:YES];
+        [self flushQueueAndWait:YES];
         
         if ([self.delegate respondsToSelector:@selector(client:didTransitionToState:)])
             [self.delegate client:self didTransitionToState:state];
@@ -169,9 +189,19 @@ static NSString *SIOQueryStringFromParametersWithEncoding(NSDictionary *params, 
 - (void)dispatchEvent:(SIOEventMessage *)message state:(SIOClientState)state
 {
     dispatch_async(dispatch_get_main_queue(), ^{
-        for (SIOEventListener listener in [self.eventListeners blocksForKey:message.name])
+        for (SIOEventListener listener in [self.messageListeners blocksForKey:message.name])
         {
             listener(self, state, message);
+        }
+    });
+}
+
+- (void)dispatchMessage:(SIOMessage *)message key:(NSString *)key state:(SIOClientState)state
+{
+    dispatch_async(dispatch_get_main_queue(), ^{
+        for (SIOTextListener listener in [self.messageListeners blocksForKey:key])
+        {
+            listener(self, state, (SIOTextMessage *)message);
         }
     });
 }
@@ -243,14 +273,23 @@ static NSString *SIOQueryStringFromParametersWithEncoding(NSDictionary *params, 
 
 - (void)disconnect
 {
-    [self.transport sendMessage:[[SIODisconnectMessage alloc] init]];
+    [self.transport disconnect];
 }
 
 #pragma mark - Transport
 
 - (void)openTransport
 {
-    SIOTransport <SIOTransport> *transport = [[SIOWebSocketTransport alloc] initWithDelegate:self];
+    SIOHandshakeResponse *handshake = self.handshakeResponse;
+    
+    Class transportClass = Nil;
+    if ([handshake.supportedTransports containsObject:[SIOWebSocketTransport transportID]])
+        transportClass = [SIOWebSocketTransport class];
+    else
+        if ([handshake.supportedTransports containsObject:[SIOXHRPollingTransport transportID]])
+            transportClass = [SIOXHRPollingTransport class];
+    
+    SIOTransport <SIOTransport> *transport = [(SIOTransport <SIOTransport> *)[transportClass alloc] initWithDelegate:self];;
     self.transport = transport;
     
     [transport connect];
@@ -266,6 +305,18 @@ static NSString *SIOQueryStringFromParametersWithEncoding(NSDictionary *params, 
 {
     if (listener)
         [self.eventListeners addBlock:listener forKey:event];
+}
+
+- (void)addTextListener:(SIOTextListener)listener
+{
+    if (listener)
+        [self.messageListeners addBlock:listener forKey:SIOMessageTextCallbackKey];
+}
+
+- (void)addJSONListener:(SIOJSONListener)listener
+{
+    if (listener)
+        [self.messageListeners addBlock:listener forKey:SIOMessageJSONCallbackKey];
 }
 
 - (void)send:(SIOMessage *)message withCallback:(SIOAcknoledgementCallback)callback
@@ -333,7 +384,7 @@ static NSString *SIOQueryStringFromParametersWithEncoding(NSDictionary *params, 
     switch (message.type)
     {
         case SIOMessageTypeHeartbeat:{
-            [self.transport sendHeartbeat];
+            [self.transport sendMessage:[[SIOHeartbeatMessage alloc] init]];
             break;
         }
         case SIOMessageTypeEvent:{
@@ -347,6 +398,12 @@ static NSString *SIOQueryStringFromParametersWithEncoding(NSDictionary *params, 
                 callback(message.data);
             break;
         }
+        case SIOMessageTypeMessage:{ // Text Message
+            [self dispatchMessage:message key:SIOMessageTextCallbackKey state:self.state];
+        }
+        case SIOMessageTypeJSONMessage:{
+            [self dispatchMessage:message key:SIOMessageJSONCallbackKey state:self.state];
+        }
         default:
             break;
     }
@@ -354,13 +411,13 @@ static NSString *SIOQueryStringFromParametersWithEncoding(NSDictionary *params, 
     if (message.acknowledge)
         [self sendAcknowledgement:message.messageID];
     
-    [self flushQueue:NO];
+    [self flushQueueAndWait:NO];
 }
 
 - (void)transport:(id<SIOTransport>)transport transitionedToState:(SIOTransportState)state
 {
     if ([transport isReady])
-        [self flushQueue:YES];
+        [self flushQueueAndWait:YES];
 }
 
 - (void)transport:(id <SIOTransport>)transport didFailWithError:(NSError *)error
@@ -378,7 +435,7 @@ static NSString *SIOQueryStringFromParametersWithEncoding(NSDictionary *params, 
     [queueLock unlock];
 }
 
-- (void)flushQueue:(BOOL)wait
+- (void)flushQueueAndWait:(BOOL)wait
 {
     NSMutableArray *messageQueue = self.messageQueue;
     SIOTransport <SIOTransport> *transport = self.transport;
@@ -417,8 +474,14 @@ static NSString *SIOQueryStringFromParametersWithEncoding(NSDictionary *params, 
 
 #pragma mark - Transport
 
-- (NSMutableURLRequest *)transportRequestWithTransport:(id <SIOTransport>)transport
+- (NSMutableURLRequest *)transportRequestWithTransport:(id <SIOTransport>)transport params:(NSDictionary *)params
 {
+    NSMutableDictionary *parameters = [params mutableCopy];
+    if (parameters == nil)
+        parameters = [[NSMutableDictionary alloc] initWithCapacity:1];
+    NSString *timestamp = [NSString stringWithFormat:@"%.f", [[NSDate date] timeIntervalSince1970]];
+    [parameters setObject:timestamp forKey:@"t"];
+    
     SIOHandshakeResponse *handshake = self.handshakeResponse;
     
     NSString *scheme = [transport schemeSecure:self.secure];
@@ -428,6 +491,7 @@ static NSString *SIOQueryStringFromParametersWithEncoding(NSDictionary *params, 
     NSInteger version = self.protocolVersion;
     NSString *transportID = [transport transportID];
     NSString *session = handshake.session;
+    NSString *query = SIOQueryStringFromParametersWithEncoding(parameters, NSUTF8StringEncoding);
     
     if (port == 0)
         port = 80;
@@ -436,7 +500,8 @@ static NSString *SIOQueryStringFromParametersWithEncoding(NSDictionary *params, 
                                host.length +
                                namespace.length +
                                transportID.length +
-                               session.length);
+                               session.length +
+                               query.length);
     
     NSMutableString *URLString = [[NSMutableString alloc] initWithCapacity:estLength];
     
@@ -450,6 +515,8 @@ static NSString *SIOQueryStringFromParametersWithEncoding(NSDictionary *params, 
         [URLString appendFormat:@"%@/", transportID];
     if (session)
         [URLString appendFormat:@"%@/", session];
+    if (query)
+        [URLString appendFormat:@"?%@", query];
     
     NSURL *URL = [[NSURL alloc] initWithString:URLString];
     

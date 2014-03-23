@@ -23,7 +23,13 @@ typedef NS_ENUM(NSInteger, SIOMessageType) {
     SIOMessageTypeNoop          = 8,
 };
 
-@interface SIOMessage : NSObject
+@interface SIOMessage : NSObject <NSCopying> {
+  @private
+    NSInteger _messageID;
+    BOOL _acknowledge;
+    NSString *_endpoint;
+    NSString *_data;
+}
 
 - (instancetype)initWithString:(NSString *)string;
 

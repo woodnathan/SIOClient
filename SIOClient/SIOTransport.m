@@ -10,6 +10,16 @@
 
 @implementation SIOTransport
 
++ (NSString *)transportID
+{
+    return nil;
+}
+
+- (instancetype)init
+{
+    return [self initWithDelegate:nil];
+}
+
 - (instancetype)initWithDelegate:(id <SIOTransportDelegate>)delegate
 {
     self = [super init];

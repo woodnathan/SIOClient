@@ -21,9 +21,9 @@ typedef NS_ENUM(NSInteger, SIOTransportState) {
 @property (nonatomic, readonly, getter = isReady) BOOL ready;
 
 - (void)connect;
+- (void)disconnect;
 
 - (BOOL)sendMessage:(SIOMessage *)message;
-- (void)sendHeartbeat;
 
 - (NSString *)schemeSecure:(BOOL)secure;
 - (NSString *)transportID;
@@ -32,7 +32,7 @@ typedef NS_ENUM(NSInteger, SIOTransportState) {
 
 @protocol SIOTransportDelegate <NSObject>
 
-- (NSMutableURLRequest *)transportRequestWithTransport:(id <SIOTransport>)transport;
+- (NSMutableURLRequest *)transportRequestWithTransport:(id <SIOTransport>)transport params:(NSDictionary *)params;
 
 - (void)transport:(id <SIOTransport>)transport transitionedToState:(SIOTransportState)state;
 - (void)transport:(id <SIOTransport>)transport receivedMessage:(SIOMessage *)message;
@@ -44,6 +44,8 @@ typedef NS_ENUM(NSInteger, SIOTransportState) {
   @protected
     SIOTransportState _state;
 }
+
++ (NSString *)transportID;
 
 - (instancetype)initWithDelegate:(id <SIOTransportDelegate>)delegate;
 
