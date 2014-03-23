@@ -152,12 +152,12 @@ static Class SIOMessageClassForType(SIOMessageType type)
 
 - (NSMutableString *)payload
 {
-    NSMutableString *payload = [[NSMutableString alloc] initWithFormat:@"%i", self.type];
+    NSMutableString *payload = [[NSMutableString alloc] initWithFormat:@"%lu", (unsigned long)self.type];
     
     NSInteger messageID = self.messageID;
     if (messageID != 0)
     {
-        [payload appendFormat:@":%i", messageID];
+        [payload appendFormat:@":%ld", (long)messageID];
         
         if (self.acknowledge)
             [payload appendString:@"+"];

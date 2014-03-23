@@ -28,7 +28,7 @@
 {
     NSMutableString *payload = [super payload];
     
-    [payload appendFormat:@":%d", self.acknowledgeID];
+    [payload appendFormat:@":%ld", (long)self.acknowledgeID];
     
     return payload;
 }

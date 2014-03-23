@@ -442,10 +442,10 @@ static NSString *SIOQueryStringFromParametersWithEncoding(NSDictionary *params, 
     
     [URLString appendFormat:@"%@://", scheme];
     [URLString appendString:host];
-    [URLString appendFormat:@":%d", port];
+    [URLString appendFormat:@":%lu", (unsigned long)port];
     [URLString appendString:@"/"];
     [URLString appendFormat:@"%@/", namespace];
-    [URLString appendFormat:@"%i/", version];
+    [URLString appendFormat:@"%ld/", (long)version];
     if (transportID)
         [URLString appendFormat:@"%@/", transportID];
     if (session)
@@ -489,10 +489,10 @@ static NSString *SIOQueryStringFromParametersWithEncoding(NSDictionary *params, 
     [URLString appendFormat:@"%@://", scheme];
     [URLString appendString:host];
     if (port != 0)
-        [URLString appendFormat:@":%d", port];
+        [URLString appendFormat:@":%lu", (unsigned long)port];
     [URLString appendString:@"/"];
     [URLString appendFormat:@"%@/", namespace];
-    [URLString appendFormat:@"%i/", version];
+    [URLString appendFormat:@"%ld/", (long)version];
     if (transport)
         [URLString appendFormat:@"%@/", transport];
     if (session)
