@@ -189,7 +189,7 @@ static NSString *SIOQueryStringFromParametersWithEncoding(NSDictionary *params, 
 - (void)dispatchEvent:(SIOEventMessage *)message state:(SIOClientState)state
 {
     dispatch_async(dispatch_get_main_queue(), ^{
-        for (SIOEventListener listener in [self.messageListeners blocksForKey:message.name])
+        for (SIOEventListener listener in [self.eventListeners blocksForKey:message.name])
         {
             listener(self, state, message);
         }
