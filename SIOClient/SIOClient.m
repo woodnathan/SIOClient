@@ -29,7 +29,7 @@ static NSString *const SIOClientHTTPSScheme = @"https";
 static NSString *const SIOMessageTextCallbackKey = @"text";
 static NSString *const SIOMessageJSONCallbackKey = @"json";
 
-static inline BOOL SIOClientIsConnecting(SIOClientState state)
+static inline BOOL SIOClientIsConnected(SIOClientState state)
 {
     return (state == SIOClientConnectingState || state == SIOClientConnectedState);
 }
@@ -131,6 +131,11 @@ static NSString *SIOQueryStringFromParametersWithEncoding(NSDictionary *params, 
     return 1;
 }
 
+- (BOOL)isConnected
+{
+    return SIOClientIsConnected(self.state);
+}
+
 - (NSString *)socketNamespace
 {
     if (self->_socketNamespace == nil)
@@ -217,7 +222,7 @@ static NSString *SIOQueryStringFromParametersWithEncoding(NSDictionary *params, 
                  transport:(NSString *)transport
                     params:(NSDictionary *)params
 {
-    if (SIOClientIsConnecting(self.state))
+    if ([self isConnected])
         return;
     
     self.state = SIOClientConnectingState;

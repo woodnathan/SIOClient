@@ -62,6 +62,8 @@ extern NSString *const SIOClientXHRPollingTransportID; // Unsupported
 @property (nonatomic, copy) NSString *socketNamespace;
 @property (nonatomic, readwrite) NSUInteger protocolVersion;
 
+@property (nonatomic, readonly, getter = isConnected) BOOL connected;
+
 - (void)connect;
 - (void)connectWithSession:(NSString *)session
                  transport:(NSString *)transport
