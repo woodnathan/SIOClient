@@ -1,6 +1,6 @@
 Description
 --
-SIOClient is a Socket.io (Version 1.0) client written in Objective-C for the iOS and Mac OS X platforms.
+SIOClient is a Socket.io (Version 0.9) client written in Objective-C for the iOS and Mac OS X platforms.
 
 Currently it only supports WebSockets, with XHR Polling coming in the near future.
 
